@@ -7,8 +7,9 @@ use crate::parser::VHDLParser;
 impl VHDLParser {
     pub fn parse_architecture(&self, entity_name: &str) -> Result<Architecture> {
         // Find architecture for this entity
+        // Use greedy .* for body to capture everything until the final 'end architecture'
         let arch_re = Regex::new(
-            &format!(r"(?is)architecture\s+(\w+)\s+of\s+{}\s+is(.*?)begin(.*?)end\s+(?:architecture\s+)?(?:\w+\s*)?;", entity_name)
+            &format!(r"(?is)architecture\s+(\w+)\s+of\s+{}\s+is(.*?)begin(.*)end\s+(?:architecture\s+)?(?:\w+\s*)?;", entity_name)
         ).context("Failed to compile architecture regex")?;
 
         if let Some(cap) = arch_re.captures(&self.content) {
@@ -58,15 +59,21 @@ impl VHDLParser {
     fn parse_processes(&self, body: &str) -> Result<Vec<Process>> {
         let mut processes = Vec::new();
 
-        // Match process blocks
+        // Match process blocks - VHDL syntax: process(...) begin ... end process;
+        // Pattern: [label :] process(sensitivity_list) [is] begin ... end process;
+        // Need to use greedy match to capture entire process body including nested begin/end
         let process_re = Regex::new(
-            r"(?is)(?:(\w+)\s*:\s*)?process\s*\(([^)]*)\)(.*?)end\s+process"
+            r"(?is)(?:(\w+)\s*:\s*)?process\s*\(([^)]*)\)(?:\s+is)?\s+begin\s+(.*?)\s+end\s+process\s*;"
         ).context("Failed to compile process regex")?;
+
+        eprintln!("DEBUG: Looking for processes in body (length={})...", body.len());
 
         for cap in process_re.captures_iter(body) {
             let label = cap.get(1).map(|m| m.as_str().to_string());
             let sensitivity = cap.get(2).unwrap().as_str();
             let process_body = cap.get(3).unwrap().as_str();
+
+            eprintln!("DEBUG: Found process - label={:?}, sensitivity={}", label, sensitivity);
 
             let sensitivity_list: Vec<String> = sensitivity
                 .split(',')
@@ -77,10 +84,11 @@ impl VHDLParser {
             processes.push(Process {
                 label,
                 sensitivity_list,
-                body: process_body.to_string(),
+                body: process_body.trim().to_string(),
             });
         }
 
+        eprintln!("DEBUG: Total processes found: {}", processes.len());
         Ok(processes)
     }
 
@@ -89,10 +97,12 @@ impl VHDLParser {
 
         // Remove process blocks from body to get only concurrent statements
         let process_re = Regex::new(
-            r"(?is)(?:\w+\s*:\s*)?process\s*\([^)]*\).*?end\s+process\s*;"
+            r"(?is)(?:\w+\s*:\s*)?process\s*\([^)]*\)(?:\s+is)?\s+begin\s+.*?\s+end\s+process\s*;"
         ).context("Failed to compile process regex for removal")?;
 
         let body_without_processes = process_re.replace_all(body, "");
+
+        eprintln!("DEBUG: Body without processes:\n{}", body_without_processes);
 
         // Split by semicolon and filter out empty lines
         for line in body_without_processes.split(';') {

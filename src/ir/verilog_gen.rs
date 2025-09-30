@@ -147,46 +147,146 @@ impl VerilogGenerator {
     fn convert_process_body(&self, vhdl_body: &str) -> Result<String> {
         let mut output = String::new();
         let double_indent = format!("{}{}", self.indent, self.indent);
-
-        // Simple conversion - this is a starting point
-        // In a full implementation, this would need proper VHDL parsing
+        let mut in_case = false;
+        let mut case_branch_has_stmt = false;
 
         for line in vhdl_body.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with("--") {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("--") {
                 continue;
             }
 
-            let mut verilog_line = line.to_string();
+            let mut verilog_line = trimmed.to_string();
 
-            // Convert VHDL syntax to Verilog
-            verilog_line = verilog_line.replace(" := ", " = ");          // Assignment
-            verilog_line = verilog_line.replace(" <= ", " <= ");         // Non-blocking (already correct)
-            verilog_line = verilog_line.replace("'1'", "1'b1");          // Bit literals
+            // Convert bit literals first (before comparison operators)
+            verilog_line = verilog_line.replace(" = '1'", " == 1'b1");
+            verilog_line = verilog_line.replace(" = '0'", " == 1'b0");
+            verilog_line = verilog_line.replace("= '1'", "== 1'b1");
+            verilog_line = verilog_line.replace("= '0'", "== 1'b0");
+            verilog_line = verilog_line.replace("'1'", "1'b1");
             verilog_line = verilog_line.replace("'0'", "1'b0");
-            verilog_line = verilog_line.replace("\"1\"", "1'b1");
-            verilog_line = verilog_line.replace("\"0\"", "1'b0");
-            verilog_line = verilog_line.replace(" then", "");            // Remove 'then'
-            verilog_line = verilog_line.replace("elsif", "else if");     // elsif -> else if
-            verilog_line = verilog_line.replace("end if", "end");        // end if -> end
-            verilog_line = verilog_line.replace("rising_edge(", "posedge "); // rising_edge
-            verilog_line = verilog_line.replace(")", "");                // Remove closing paren from rising_edge
 
-            // Convert if statements
-            if verilog_line.starts_with("if ") {
-                verilog_line = verilog_line.replace("if ", "if (") + ")";
+            // Convert others => value
+            verilog_line = verilog_line.replace("(others => 1'b0)", "8'b0");
+            verilog_line = verilog_line.replace("(others => 1'b1)", "8'b1");
+
+            // Convert case statements
+            if verilog_line.starts_with("case ") && verilog_line.contains(" is") {
+                verilog_line = verilog_line.replace(" is", "");
+                verilog_line = verilog_line.replacen("case ", "case (", 1);
+                if !verilog_line.ends_with(")") {
+                    verilog_line.push(')');
+                }
+                in_case = true;
+                case_branch_has_stmt = false;
+            } else if verilog_line.starts_with("when ") {
+                // Close previous case branch if it had statements
+                if in_case && case_branch_has_stmt {
+                    output.push_str(&format!("{}end\n", &double_indent));
+                    case_branch_has_stmt = false;
+                }
+
+                // "when "00" =>" -> "2'b00: begin" or "when IDLE =>" -> "IDLE: begin"
+                if let Some(value_end) = verilog_line.find(" =>") {
+                    let value_part = &verilog_line[5..value_end]; // Skip "when "
+                    let value = value_part.trim();
+                    if value == "others" {
+                        verilog_line = "default: begin".to_string();
+                    } else if value.starts_with('"') && value.ends_with('"') {
+                        // Binary literal: "00" -> 2'b00: begin
+                        let binary = value.trim_matches('"');
+                        let width = binary.len();
+                        verilog_line = format!("{}'b{}: begin", width, binary);
+                    } else {
+                        // Enum or identifier: IDLE -> IDLE: begin
+                        verilog_line = format!("{}: begin", value);
+                    }
+                }
+            } else if verilog_line == "end case" || verilog_line == "end case;" {
+                // Close last case branch
+                if in_case && case_branch_has_stmt {
+                    output.push_str(&format!("{}end\n", &double_indent));
+                }
+                verilog_line = "endcase".to_string();
+                in_case = false;
+                case_branch_has_stmt = false;
             }
 
-            // Handle others
-            verilog_line = verilog_line.replace("(others => '0')", "0");
-            verilog_line = verilog_line.replace("(others => '1')", "~0");
+            // Handle if/elsif/else/then keywords
+            let is_if = verilog_line.starts_with("if ");
+            let is_elsif = verilog_line.starts_with("elsif ");
+            let is_else = verilog_line.trim() == "else";
+            let is_endif = verilog_line == "end if" || verilog_line == "end if;";
+
+            if is_if {
+                // "if reset == 1'b1 then" -> "if (reset == 1'b1) begin"
+                verilog_line = verilog_line.replacen("if ", "if (", 1);
+                verilog_line = verilog_line.replace(" then", ") begin");
+                if !verilog_line.contains(") begin") {
+                    verilog_line.push_str(" begin");
+                }
+            } else if is_elsif {
+                // "elsif rising_edge(clk) then" -> "end else begin"
+                // (rising_edge is already handled in sensitivity list)
+                if verilog_line.contains("rising_edge") || verilog_line.contains("falling_edge") {
+                    verilog_line = "end else begin".to_string();
+                } else {
+                    verilog_line = verilog_line.replacen("elsif ", "end else if (", 1);
+                    verilog_line = verilog_line.replace(" then", ") begin");
+                    if !verilog_line.contains(") begin") {
+                        verilog_line.push_str(" begin");
+                    }
+                }
+            } else if is_else {
+                verilog_line = "end else begin".to_string();
+            } else if is_endif {
+                verilog_line = "end".to_string();
+            }
+
+            // Convert logical operators
+            verilog_line = verilog_line.replace(" and ", " & ");
+            verilog_line = verilog_line.replace(" or ", " | ");
+            verilog_line = verilog_line.replace(" xor ", " ^ ");
+            verilog_line = verilog_line.replace(" not ", " ~");
+
+            // Convert type conversions
+            verilog_line = verilog_line.replace("std_logic_vector(unsigned(", "");
+            verilog_line = verilog_line.replace("std_logic_vector(signed(", "");
+            verilog_line = verilog_line.replace("unsigned(", "");
+            verilog_line = verilog_line.replace("signed(", "");
+            // Remove extra closing parens from type conversions (up to 2)
+            let mut paren_diff = verilog_line.matches(')').count() as i32 - verilog_line.matches('(').count() as i32;
+            while paren_diff > 0 {
+                if let Some(pos) = verilog_line.rfind(')') {
+                    verilog_line.remove(pos);
+                    paren_diff -= 1;
+                } else {
+                    break;
+                }
+            }
+
+            // Don't add semicolons to control flow keywords
+            let is_control_flow = verilog_line.contains("begin") ||
+                                   (verilog_line.starts_with("end") && !verilog_line.starts_with("endcase")) ||
+                                   verilog_line == "else" ||
+                                   verilog_line.ends_with(":") || // case labels
+                                   verilog_line.starts_with("case") ||
+                                   verilog_line == "endcase";
 
             output.push_str(&double_indent);
             output.push_str(&verilog_line);
-            if !verilog_line.ends_with(';') && !verilog_line.ends_with("begin") && !verilog_line.trim().is_empty() {
+
+            // Add semicolon to assignments only
+            if !is_control_flow && !verilog_line.ends_with(';') {
                 output.push(';');
             }
+
             output.push('\n');
+
+            // Track if we've added a statement to a case branch
+            if in_case && !is_control_flow && verilog_line.contains(" <= ") {
+                case_branch_has_stmt = true;
+            }
         }
 
         Ok(output)
@@ -196,7 +296,52 @@ impl VerilogGenerator {
         // Convert VHDL concurrent statements to Verilog assign statements
         let mut verilog = stmt.to_string();
 
+        // Handle with...select statements
+        if verilog.contains("with ") && verilog.contains(" select") {
+            return Ok(format!("// TODO: Convert VHDL 'with...select' statement:\n    // {}",
+                verilog.replace("\n", "\n    // ")));
+        }
+
+        // Handle conditional assignments: "signal <= '1' when condition else '0'"
+        if verilog.contains(" when ") && verilog.contains(" else ") {
+            // Parse: "target <= value1 when condition else value2"
+            let parts: Vec<&str> = verilog.split(" <= ").collect();
+            if parts.len() == 2 {
+                let target = parts[0].trim();
+                let rest = parts[1];
+
+                if let Some(when_pos) = rest.find(" when ") {
+                    if let Some(else_pos) = rest.find(" else ") {
+                        let value1 = rest[..when_pos].trim();
+                        let condition = rest[when_pos+6..else_pos].trim();
+                        let value2 = rest[else_pos+6..].trim();
+
+                        // Convert to ternary: target = condition ? value1 : value2
+                        let mut cond_conv = condition.to_string();
+                        cond_conv = cond_conv.replace(" = ", " == ");
+                        // Convert string literals in conditions like "00000000" to 8'b00000000
+                        if cond_conv.contains('"') {
+                            // Find string literals and convert them
+                            let re = regex::Regex::new(r#""([01]+)""#).unwrap();
+                            cond_conv = re.replace_all(&cond_conv, |caps: &regex::Captures| {
+                                let binary = &caps[1];
+                                format!("{}'b{}", binary.len(), binary)
+                            }).to_string();
+                        }
+
+                        let val1_conv = value1.replace("'1'", "1'b1").replace("'0'", "1'b0");
+                        let val2_conv = value2.replace("'1'", "1'b1").replace("'0'", "1'b0");
+
+                        verilog = format!("assign {} = {} ? {} : {};", target, cond_conv, val1_conv, val2_conv);
+                        return Ok(verilog);
+                    }
+                }
+            }
+        }
+
         verilog = verilog.replace(" <= ", " = ");  // Concurrent assignment
+        verilog = verilog.replace("'1'", "1'b1");
+        verilog = verilog.replace("'0'", "1'b0");
 
         // If it doesn't look like an assignment, wrap it in assign
         if verilog.contains(" = ") && !verilog.starts_with("assign ") {

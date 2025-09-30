@@ -5,7 +5,7 @@ use crate::ir::{Entity, Port, PortDirection, VHDLType, VectorRange, Architecture
 /// Simple VHDL parser that extracts entity declarations
 /// For now, using regex-based parsing. Tree-sitter integration can be added later.
 pub struct VHDLParser {
-    content: String,
+    pub content: String,
 }
 
 impl VHDLParser {
@@ -105,7 +105,7 @@ impl VHDLParser {
         Ok(ports)
     }
 
-    fn parse_type(&self, type_str: &str) -> Result<VHDLType> {
+    pub fn parse_type(&self, type_str: &str) -> Result<VHDLType> {
         let type_str = type_str.trim().to_lowercase();
 
         if type_str == "std_logic" || type_str == "std_ulogic" {
