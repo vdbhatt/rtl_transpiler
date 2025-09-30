@@ -1,0 +1,31 @@
+module pcie_endpoint (
+    input wire sys_clk_n,
+    input wire sys_rst_n,
+    output wire user_reset,
+    output wire user_lnk_up,
+    output wire [7:0] pci_exp_txn,
+    input wire [7:0] pci_exp_rxp,
+    input wire [7:0] pci_exp_rxn,
+    input wire [31:0] s_axis_tx_tkeep,
+    input wire s_axis_tx_tlast,
+    input wire s_axis_tx_tvalid,
+    output wire s_axis_tx_tready,
+    input wire [3:0] s_axis_tx_tuser,
+    output wire [31:0] m_axis_rx_tkeep,
+    output wire m_axis_rx_tlast,
+    output wire m_axis_rx_tvalid,
+    input wire m_axis_rx_tready,
+    output wire [21:0] m_axis_rx_tuser,
+    input wire cfg_mgmt_write,
+    input wire [31:0] cfg_mgmt_write_data,
+    input wire [3:0] cfg_mgmt_byte_enable,
+    input wire cfg_mgmt_read,
+    output wire [31:0] cfg_mgmt_read_data,
+    output wire cfg_mgmt_read_write_done,
+    output wire cfg_err_cor,
+    output wire cfg_err_fatal,
+    output wire cfg_err_nonfatal,
+    output wire cfg_local_error
+);
+endmodule
+

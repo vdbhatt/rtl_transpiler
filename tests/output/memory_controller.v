@@ -1,0 +1,30 @@
+module memory_controller (
+    input wire clk_mem,
+    input wire rst_n,
+    output wire cmd_ready,
+    input wire [31:0] cmd_addr,
+    input wire cmd_write,
+    input wire [7:0] cmd_burst_len,
+    input wire wr_valid,
+    output wire wr_ready,
+    input wire [15:0] wr_strobe,
+    output wire rd_valid,
+    input wire rd_ready,
+    output wire calibration_done,
+    output wire error,
+    output wire ddr_ck_n,
+    output wire ddr_cke,
+    output wire ddr_cs_n,
+    output wire ddr_ras_n,
+    output wire ddr_cas_n,
+    output wire ddr_we_n,
+    output wire [2:0] ddr_ba,
+    output wire [14:0] ddr_addr,
+    inout wire [31:0] ddr_dq,
+    inout wire [3:0] ddr_dqs_p,
+    inout wire [3:0] ddr_dqs_n,
+    output wire [3:0] ddr_dm,
+    output wire ddr_odt
+);
+endmodule
+
