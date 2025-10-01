@@ -2,11 +2,11 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::fs;
 
-use crate::ir::VerilogGenerator;
+use crate::ir::SystemVerilogGenerator;
 use crate::parser::ASTVHDLParser;
 use crate::tools::{BaseToolImpl, Tool, ToolParameter, ToolSchema};
 
-/// Tool for batch transpiling VHDL files in a folder to Verilog modules
+/// Tool for batch transpiling VHDL files in a folder to SystemVerilog 2012 modules
 pub struct TranspileFolderTool {
     base: BaseToolImpl,
     allowed_folders: Vec<String>,
@@ -25,7 +25,7 @@ impl TranspileFolderTool {
             ToolParameter {
                 name: "output_folder".to_string(),
                 param_type: "string".to_string(),
-                description: "Path to the output folder for Verilog files (optional, defaults to same folder)".to_string(),
+                description: "Path to the output folder for SystemVerilog files (optional, defaults to same folder)".to_string(),
                 required: false,
                 default: None,
             },
@@ -39,8 +39,8 @@ impl TranspileFolderTool {
         ];
 
         let base = BaseToolImpl::new(
-            "transpile_vhdl_folder".to_string(),
-            "Batch transpile all VHDL files in a folder to Verilog modules. Processes all .vhd and .vhdl files in the specified directory.".to_string(),
+            "transpile_vhdl_folder_to_systemverilog".to_string(),
+            "Batch transpile all VHDL files in a folder to SystemVerilog 2012 modules. Processes all .vhd and .vhdl files in the specified directory.".to_string(),
             parameters,
         );
 
@@ -116,26 +116,26 @@ impl TranspileFolderTool {
             return Err(anyhow::anyhow!("No entities found in VHDL file"));
         }
 
-        // Generate Verilog for all entities
-        let generator = VerilogGenerator::new();
-        let mut verilog_output = String::new();
+        // Generate SystemVerilog for all entities
+        let generator = SystemVerilogGenerator::new();
+        let mut systemverilog_output = String::new();
 
         for entity in &entities {
-            let verilog = generator.generate(entity)
-                .context(format!("Failed to generate Verilog for entity: {}", entity.name))?;
+            let systemverilog = generator.generate(entity)
+                .context(format!("Failed to generate SystemVerilog for entity: {}", entity.name))?;
 
-            verilog_output.push_str(&verilog);
-            verilog_output.push('\n');
+            systemverilog_output.push_str(&systemverilog);
+            systemverilog_output.push('\n');
         }
 
         // Determine output file path
         let vhdl_filename = vhdl_path.file_stem()
             .ok_or_else(|| anyhow::anyhow!("Invalid VHDL filename"))?;
-        let output_path = output_folder.join(format!("{}.v", vhdl_filename.to_string_lossy()));
+        let output_path = output_folder.join(format!("{}.sv", vhdl_filename.to_string_lossy()));
 
         // Write to file
-        std::fs::write(&output_path, &verilog_output)
-            .context(format!("Failed to write Verilog to: {}", output_path.display()))?;
+        std::fs::write(&output_path, &systemverilog_output)
+            .context(format!("Failed to write SystemVerilog to: {}", output_path.display()))?;
 
         Ok((
             vhdl_path.display().to_string(),
@@ -230,7 +230,7 @@ impl Tool for TranspileFolderTool {
 
         // Build summary report
         let mut report = String::new();
-        report.push_str(&format!("\n=== Batch VHDL to Verilog Transpilation ===\n\n"));
+        report.push_str(&format!("\n=== Batch VHDL to SystemVerilog Transpilation ===\n\n"));
         report.push_str(&format!("Input folder:  {}\n", vhdl_folder));
         report.push_str(&format!("Output folder: {}\n", output_folder));
         report.push_str(&format!("Recursive:     {}\n\n", recursive));
@@ -313,7 +313,7 @@ mod tests {
         assert!(result.contains("buffer.vhd"));
 
         // Verify output files exist
-        assert!(vhdl_folder.join("counter.v").exists());
-        assert!(vhdl_folder.join("buffer.v").exists());
+        assert!(vhdl_folder.join("counter.sv").exists());
+        assert!(vhdl_folder.join("buffer.sv").exists());
     }
 }

@@ -21,8 +21,11 @@ impl VerilogGenerator {
     pub fn generate(&self, entity: &Entity) -> Result<String> {
         let mut output = String::new();
 
+        // Collect all signals assigned in processes (need to be reg)
+        let procedural_signals = self.collect_procedural_signals(entity);
+
         // Module header with ports
-        output.push_str(&self.generate_module_header(entity)?);
+        output.push_str(&self.generate_module_header(entity, &procedural_signals)?);
 
         // Module body (empty for now, just entity conversion)
         output.push_str(&self.generate_module_body(entity)?);
@@ -33,7 +36,26 @@ impl VerilogGenerator {
         Ok(output)
     }
 
-    fn generate_module_header(&self, entity: &Entity) -> Result<String> {
+    fn collect_procedural_signals(&self, entity: &Entity) -> std::collections::HashSet<String> {
+        let mut procedural_signals = std::collections::HashSet::new();
+        
+        if let Some(arch) = &entity.architecture {
+            for process in &arch.processes {
+                // Extract signal names assigned in process body
+                for line in process.body.lines() {
+                    let trimmed = line.trim();
+                    if let Some(pos) = trimmed.find(" <=") {
+                        let signal_name = trimmed[..pos].trim();
+                        procedural_signals.insert(signal_name.to_string());
+                    }
+                }
+            }
+        }
+        
+        procedural_signals
+    }
+
+    fn generate_module_header(&self, entity: &Entity, procedural_signals: &std::collections::HashSet<String>) -> Result<String> {
         let mut output = String::new();
 
         // Start module declaration
@@ -43,7 +65,18 @@ impl VerilogGenerator {
         if !entity.ports.is_empty() {
             for (i, port) in entity.ports.iter().enumerate() {
                 output.push_str(&self.indent);
-                output.push_str(&port.to_verilog());
+                
+                // Check if this port is assigned in a process and needs to be reg
+                let is_procedural = procedural_signals.contains(&port.name);
+                let direction = port.direction.to_verilog();
+                let mut verilog_type = port.port_type.to_verilog();
+                
+                // If output port is assigned in process, change wire to reg
+                if is_procedural && matches!(port.direction, PortDirection::Out | PortDirection::Buffer) {
+                    verilog_type = verilog_type.replace("wire", "reg");
+                }
+                
+                output.push_str(&format!("{} {} {}", direction, verilog_type, port.name));
 
                 // Add comma if not last port
                 if i < entity.ports.len() - 1 {
@@ -72,7 +105,7 @@ impl VerilogGenerator {
     fn generate_architecture_body(&self, arch: &Architecture) -> Result<String> {
         let mut output = String::new();
 
-        // Generate signal declarations
+        // Generate signal declarations (internal signals are always reg when assigned in processes)
         if !arch.signals.is_empty() {
             output.push('\n');
             for signal in &arch.signals {
@@ -147,8 +180,10 @@ impl VerilogGenerator {
     fn convert_process_body(&self, vhdl_body: &str) -> Result<String> {
         let mut output = String::new();
         let double_indent = format!("{}{}", self.indent, self.indent);
+        let triple_indent = format!("{}{}{}", self.indent, self.indent, self.indent);
         let mut in_case = false;
         let mut case_branch_has_stmt = false;
+        let mut indent_level = 0; // Track nesting level for proper indentation
 
         for line in vhdl_body.lines() {
             let trimmed = line.trim();
@@ -311,7 +346,21 @@ impl VerilogGenerator {
                                    verilog_line.starts_with("case") ||
                                    verilog_line == "endcase";
 
-            output.push_str(&double_indent);
+            // Adjust indent level based on control flow
+            if verilog_line.starts_with("end") {
+                if indent_level > 0 {
+                    indent_level -= 1;
+                }
+            }
+
+            // Choose appropriate indentation
+            let current_indent = match indent_level {
+                0 => double_indent.clone(),
+                1 => triple_indent.clone(),
+                _ => format!("{}{}", triple_indent, self.indent.repeat(indent_level - 1)),
+            };
+
+            output.push_str(&current_indent);
             output.push_str(&verilog_line);
 
             // Add semicolon to assignments only
@@ -320,6 +369,11 @@ impl VerilogGenerator {
             }
 
             output.push('\n');
+
+            // Increase indent level after begin
+            if verilog_line.contains("begin") {
+                indent_level += 1;
+            }
 
             // Track if we've added a statement to a case branch
             if in_case && !is_control_flow && verilog_line.contains(" <= ") {

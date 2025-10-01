@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-use crate::ir::VerilogGenerator;
+use crate::ir::SystemVerilogGenerator;
 use crate::parser::ASTVHDLParser;
 use crate::tools::{BaseToolImpl, Tool, ToolParameter, ToolSchema};
 
-/// Tool for transpiling VHDL entities to Verilog modules
+/// Tool for transpiling VHDL entities to SystemVerilog 2012 modules
 pub struct TranspileTool {
     base: BaseToolImpl,
     allowed_folders: Vec<String>,
@@ -24,15 +24,15 @@ impl TranspileTool {
             ToolParameter {
                 name: "output_file".to_string(),
                 param_type: "string".to_string(),
-                description: "Path to the output Verilog file (optional)".to_string(),
+                description: "Path to the output SystemVerilog file (optional)".to_string(),
                 required: false,
                 default: None,
             },
         ];
 
         let base = BaseToolImpl::new(
-            "transpile_vhdl_to_verilog".to_string(),
-            "Transpile VHDL entity to Verilog module. Extracts entity declaration and converts it to a Verilog module with matching ports.".to_string(),
+            "transpile_vhdl_to_systemverilog".to_string(),
+            "Transpile VHDL entity to SystemVerilog 2012 module. Extracts entity declaration and converts it to a synthesizable SystemVerilog module with matching ports.".to_string(),
             parameters,
         );
 
@@ -112,17 +112,17 @@ impl Tool for TranspileTool {
             return Err(anyhow::anyhow!("No entities found in VHDL file"));
         }
 
-        // Generate Verilog for all entities
-        let generator = VerilogGenerator::new();
-        let mut verilog_output = String::new();
+        // Generate SystemVerilog for all entities
+        let generator = SystemVerilogGenerator::new();
+        let mut systemverilog_output = String::new();
 
         for entity in &entities {
-            tracing::info!("Generating Verilog for entity: {}", entity.name);
-            let verilog = generator.generate(entity)
-                .context(format!("Failed to generate Verilog for entity: {}", entity.name))?;
+            tracing::info!("Generating SystemVerilog for entity: {}", entity.name);
+            let systemverilog = generator.generate(entity)
+                .context(format!("Failed to generate SystemVerilog for entity: {}", entity.name))?;
 
-            verilog_output.push_str(&verilog);
-            verilog_output.push('\n');
+            systemverilog_output.push_str(&systemverilog);
+            systemverilog_output.push('\n');
         }
 
         // Write to file if output path provided
@@ -137,24 +137,24 @@ impl Tool for TranspileTool {
                 ));
             }
 
-            std::fs::write(out_path, &verilog_output)
-                .context(format!("Failed to write Verilog to: {}", output_path))?;
+            std::fs::write(out_path, &systemverilog_output)
+                .context(format!("Failed to write SystemVerilog to: {}", output_path))?;
 
-            tracing::info!("Verilog written to: {}", output_path);
+            tracing::info!("SystemVerilog written to: {}", output_path);
 
             Ok(format!(
-                "Successfully transpiled {} entity(ies) from '{}' to '{}'\n\nGenerated Verilog:\n{}",
+                "Successfully transpiled {} entity(ies) from '{}' to '{}'\n\nGenerated SystemVerilog:\n{}",
                 entities.len(),
                 vhdl_file,
                 output_path,
-                verilog_output
+                systemverilog_output
             ))
         } else {
             Ok(format!(
-                "Successfully transpiled {} entity(ies) from '{}'\n\nGenerated Verilog:\n{}",
+                "Successfully transpiled {} entity(ies) from '{}'\n\nGenerated SystemVerilog:\n{}",
                 entities.len(),
                 vhdl_file,
-                verilog_output
+                systemverilog_output
             ))
         }
     }
@@ -197,7 +197,7 @@ mod tests {
 
         assert!(result.contains("Successfully transpiled"));
         assert!(result.contains("module counter"));
-        assert!(result.contains("input wire clk"));
-        assert!(result.contains("output wire [7:0] count"));
+        assert!(result.contains("input logic clk"));
+        assert!(result.contains("output logic [7:0] count"));
     }
 }
