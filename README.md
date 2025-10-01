@@ -111,13 +111,13 @@ println!("{}", verilog);
 ## Current Limitations
 
 - Only entity-to-module conversion (no architecture/implementation conversion yet)
-- Regex-based parsing (tree-sitter integration planned for future)
+- AST-based parsing using tree-sitter for robust VHDL analysis
 - No support for generics/parameters yet
 - No support for VHDL packages/libraries
 
 ## Future Enhancements
 
-- [ ] Full tree-sitter integration for robust parsing
+- [x] Full tree-sitter integration for robust parsing
 - [ ] Architecture body conversion (processes, signals, logic)
 - [ ] Generic/parameter support
 - [ ] Package and library handling

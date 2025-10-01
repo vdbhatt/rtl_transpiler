@@ -1,4 +1,4 @@
-use rtl_transpiler::parser::VHDLParser;
+use rtl_transpiler::parser::ASTVHDLParser;
 use rtl_transpiler::ir::VerilogGenerator;
 use std::path::PathBuf;
 
@@ -7,7 +7,7 @@ fn test_counter_transpilation() {
     let vhdl_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/counter.vhd");
 
-    let parser = VHDLParser::from_file(&vhdl_path).unwrap();
+    let mut parser = ASTVHDLParser::from_file(&vhdl_path).unwrap();
     let entities = parser.parse_entities().unwrap();
 
     assert_eq!(entities.len(), 1);
@@ -43,7 +43,7 @@ fn test_alu_transpilation() {
     let vhdl_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/alu.vhd");
 
-    let parser = VHDLParser::from_file(&vhdl_path).unwrap();
+    let mut parser = ASTVHDLParser::from_file(&vhdl_path).unwrap();
     let entities = parser.parse_entities().unwrap();
 
     assert_eq!(entities.len(), 1);
@@ -88,7 +88,7 @@ fn test_type_conversions() {
     end entity type_test;
     "#;
 
-    let parser = VHDLParser::new(vhdl.to_string());
+    let mut parser = ASTVHDLParser::new(vhdl.to_string()).unwrap();
     let entities = parser.parse_entities().unwrap();
 
     assert_eq!(entities.len(), 1);

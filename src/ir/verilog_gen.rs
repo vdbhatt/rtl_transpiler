@@ -1,4 +1,4 @@
-use crate::ir::{Entity, Architecture};
+use crate::ir::{Entity, Architecture, Port, PortDirection, VHDLType};
 use anyhow::Result;
 
 /// Generate Verilog module from Entity IR
@@ -321,12 +321,38 @@ impl VerilogGenerator {
                         cond_conv = cond_conv.replace(" = ", " == ");
                         // Convert string literals in conditions like "00000000" to 8'b00000000
                         if cond_conv.contains('"') {
-                            // Find string literals and convert them
-                            let re = regex::Regex::new(r#""([01]+)""#).unwrap();
-                            cond_conv = re.replace_all(&cond_conv, |caps: &regex::Captures| {
-                                let binary = &caps[1];
-                                format!("{}'b{}", binary.len(), binary)
-                            }).to_string();
+                            // Simple string replacement for binary literals
+                            let mut result = String::new();
+                            let mut chars = cond_conv.chars().peekable();
+                            
+                            while let Some(ch) = chars.next() {
+                                if ch == '"' {
+                                    // Found start of string literal
+                                    let mut binary = String::new();
+                                    while let Some(&next_ch) = chars.peek() {
+                                        if next_ch == '"' {
+                                            chars.next(); // consume the closing quote
+                                            break;
+                                        }
+                                        if next_ch == '0' || next_ch == '1' {
+                                            binary.push(chars.next().unwrap());
+                                        } else {
+                                            chars.next();
+                                        }
+                                    }
+                                    
+                                    if !binary.is_empty() && binary.chars().all(|c| c == '0' || c == '1') {
+                                        result.push_str(&format!("{}'b{}", binary.len(), binary));
+                                    } else {
+                                        result.push('"');
+                                        result.push_str(&binary);
+                                        result.push('"');
+                                    }
+                                } else {
+                                    result.push(ch);
+                                }
+                            }
+                            cond_conv = result;
                         }
 
                         let val1_conv = value1.replace("'1'", "1'b1").replace("'0'", "1'b0");

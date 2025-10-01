@@ -1,13 +1,12 @@
 use anyhow::Result;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
 
-use crate::agent::basics::{AgentError, AgentExecution, AgentState, AgentStep};
-use crate::config::{AgentConfig, ModelConfig};
+use crate::agent::basics::{AgentError, AgentExecution, AgentState};
+use crate::config::AgentConfig;
 use crate::llm::{LLMClient, LLMMessage, LLMResponse};
-use crate::tools::{Tool, ToolCall, ToolExecutor, ToolResult};
+use crate::tools::{Tool, ToolExecutor, ToolResult};
 use crate::utils::{CLIConsole, TrajectoryRecorder};
 
 pub trait BaseAgent: Send + Sync {
@@ -363,59 +362,4 @@ impl BaseAgentImpl {
         }
     }
 
-    /// Wrap text to fit within specified width, respecting word boundaries
-    fn wrap_text(&self, text: &str, width: usize) -> Vec<String> {
-        let chars: Vec<char> = text.chars().collect();
-        if chars.len() <= width {
-            return vec![text.to_string()];
-        }
-        
-        let mut lines = Vec::new();
-        let mut current_pos = 0;
-        
-        while current_pos < chars.len() {
-            let end_pos = (current_pos + width).min(chars.len());
-            
-            // If we're not at the end of the text, try to break at a word boundary
-            if end_pos < chars.len() {
-                // Look backwards from end_pos to find a space or newline
-                let mut break_pos = end_pos;
-                for i in (current_pos..end_pos).rev() {
-                    if chars[i] == ' ' || chars[i] == '\n' {
-                        break_pos = i;
-                        break;
-                    }
-                }
-                
-                // If we found a word boundary, use it; otherwise use the original end_pos
-                if break_pos > current_pos {
-                    let line_chars = &chars[current_pos..break_pos];
-                    let line = line_chars.iter().collect::<String>().trim_end().to_string();
-                    lines.push(line);
-                    current_pos = break_pos + 1; // Skip the space/newline
-                } else {
-                    // No word boundary found, force break at width
-                    let line_chars = &chars[current_pos..end_pos];
-                    let line = line_chars.iter().collect::<String>();
-                    lines.push(line);
-                    current_pos = end_pos;
-                }
-            } else {
-                // Last chunk, just take what's left
-                let line_chars = &chars[current_pos..end_pos];
-                let line = line_chars.iter().collect::<String>();
-                lines.push(line);
-                current_pos = end_pos;
-            }
-        }
-        
-        // Ensure all lines are within the width limit
-        lines.into_iter().map(|line| {
-            if line.chars().count() > width {
-                line.chars().take(width).collect()
-            } else {
-                line
-            }
-        }).collect()
-    }
 }

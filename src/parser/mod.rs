@@ -1,4 +1,4 @@
-pub mod vhdl;
-pub mod vhdl_arch;
+pub mod tree_sitter_vhdl;
+pub mod ast_parser;
 
-pub use vhdl::VHDLParser;
+pub use ast_parser::ASTVHDLParser;

@@ -3,13 +3,11 @@ pub mod bash;
 pub mod edit;
 pub mod sequential_thinking;
 pub mod task_done;
-// pub mod mcp_tool;  // Commented out - not fully implemented
-pub mod mcp_tool_stub;  // MCP tool stub
-pub use mcp_tool_stub as mcp_tool;  // Re-export as mcp_tool
 pub mod transpile;
+pub mod vhdl_analyze;
 
-use anyhow::Result;
 use std::sync::Arc;
+use anyhow::Result;
 
 use crate::config::ModelProvider;
 use crate::constants;
@@ -19,8 +17,8 @@ pub use bash::BashTool;
 pub use edit::TextEditorTool;
 pub use sequential_thinking::SequentialThinkingTool;
 pub use task_done::TaskDoneTool;
-pub use mcp_tool::MCPTool;
 pub use transpile::TranspileTool;
+pub use vhdl_analyze::VHDLAnalyzeTool;
 
 pub fn create_tool(
     tool_name: &str,

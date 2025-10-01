@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use obfstr::obfstr;
 use lazy_static::lazy_static;
 
-use crate::constants::MAX_FILE_SIZE_BYTES;
 use crate::tools::base::{BaseToolImpl, Tool, ToolParameter, ToolSchema};
 
 lazy_static! {

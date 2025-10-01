@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 use crate::ir::VerilogGenerator;
-use crate::parser::VHDLParser;
+use crate::parser::ASTVHDLParser;
 use crate::tools::{BaseToolImpl, Tool, ToolParameter, ToolSchema};
 
 /// Tool for transpiling VHDL entities to Verilog modules
@@ -100,9 +100,9 @@ impl Tool for TranspileTool {
             ));
         }
 
-        // Parse VHDL
+        // Parse VHDL using AST parser
         tracing::info!("Parsing VHDL file: {}", vhdl_file);
-        let parser = VHDLParser::from_file(vhdl_path)
+        let mut parser = ASTVHDLParser::from_file(vhdl_path)
             .context(format!("Failed to parse VHDL file: {}", vhdl_file))?;
 
         let entities = parser.parse_entities()

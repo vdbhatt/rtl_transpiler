@@ -40,11 +40,12 @@ lazy_static = "1.4"
 # CLI
 clap = { version = "4.4", features = ["derive"] }
 
-# Regex
-regex = "1.10"
-
 # Terminal colors
 crossterm = "0.27"
+
+# MCP Protocol
+rmcp = { version = "0.2.0", features = ["server", "transport-io"] }
+schemars = "0.8"
 
 [dev-dependencies]
 tempfile = "3.8"
@@ -55,3 +56,8 @@ cc = "1.0"
 [lib]
 name = "rtl_transpiler"
 path = "src/lib.rs"
+
+
+[[bin]]
+name = "rtl-transpiler-mcp-rmcp"
+path = "src/bin/rtl-transpiler-mcp-rmcp.rs"

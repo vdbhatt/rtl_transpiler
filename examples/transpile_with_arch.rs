@@ -1,4 +1,4 @@
-use rtl_transpiler::{VHDLParser, ir::VerilogGenerator};
+use rtl_transpiler::{ASTVHDLParser, ir::VerilogGenerator};
 use std::path::PathBuf;
 use std::fs;
 
@@ -26,7 +26,7 @@ fn main() -> anyhow::Result<()> {
         println!("========================================");
 
         // Parse VHDL
-        let parser = VHDLParser::from_file(&vhdl_path)?;
+        let mut parser = ASTVHDLParser::from_file(&vhdl_path)?;
         let entities = parser.parse_entities()?;
 
         if entities.is_empty() {

@@ -9,10 +9,8 @@ use crate::agent::base::{BaseAgent, BaseAgentImpl};
 use crate::agent::basics::{AgentError, AgentExecution, AgentState};
 use crate::config::{AgentConfig, MCPServerConfig};
 use crate::llm::{LLMClient, LLMMessage, LLMResponse, create_llm_client};
-use crate::tools::{Tool, ToolCall, ToolExecutor, ToolResult, MCPTool};
+use crate::tools::{Tool, ToolExecutor, ToolResult};
 use crate::utils::{CLIConsole, TrajectoryRecorder};
-use crate::mcp::MCPClient;
-use tokio::sync::Mutex as TokioMutex;
 use obfstr::obfstr;
 use lazy_static::lazy_static;
 
@@ -211,7 +209,6 @@ pub struct AlanAgent {
     patch_path: Option<String>,
     mcp_servers_config: Option<HashMap<String, MCPServerConfig>>,
     pub allow_mcp_servers: Vec<String>,
-    mcp_clients: Vec<Arc<TokioMutex<MCPClient>>>,
     mcp_tools: Vec<Arc<dyn Tool>>,
 }
 
@@ -247,124 +244,18 @@ impl AlanAgent {
             patch_path: None,
             mcp_servers_config: config.mcp_servers_config.clone(),
             allow_mcp_servers,
-            mcp_clients: Vec::new(),
             mcp_tools: Vec::new(),
         })
     }
 
     pub async fn initialize_mcp(&mut self) -> Result<()> {
-        if let Some(servers_config) = &self.mcp_servers_config {
-            for (server_name, server_config) in servers_config {
-                // Check if this server is allowed (similar to Python)
-                if !self.allow_mcp_servers.is_empty() && !self.allow_mcp_servers.contains(server_name) {
-                    tracing::info!("Skipping MCP server '{}' (not in allow list)", server_name);
-                    continue;
-                }
-
-                if let Some(console) = &self.base.cli_console {
-                    console.print_info(&format!("Initializing MCP server: {}", server_name));
-                }
-
-                let mut client = MCPClient::new(server_name.clone());
-
-                // Try to connect
-                match client.connect(server_config).await {
-                    Ok(_) => {
-                        // Discover tools
-                        match client.list_tools().await {
-                            Ok(tools) => {
-                                let tool_count = tools.len();
-                                let client_arc = Arc::new(TokioMutex::new(client));
-
-                                // Create MCP tool wrappers
-                                for tool_def in tools {
-                                    let mcp_tool = Arc::new(MCPTool::new(client_arc.clone(), tool_def));
-                                    self.mcp_tools.push(mcp_tool);
-                                }
-
-                                if let Some(console) = &self.base.cli_console {
-                                    console.print_success(&format!(
-                                        "MCP server '{}' initialized with {} tools",
-                                        server_name, tool_count
-                                    ));
-                                }
-
-                                self.mcp_clients.push(client_arc);
-                            }
-                            Err(e) => {
-                                if let Some(console) = &self.base.cli_console {
-                                    console.print_error(&format!(
-                                        "Failed to list tools for MCP server '{}': {}",
-                                        server_name, e
-                                    ));
-                                }
-                                // Continue with other servers
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        if let Some(console) = &self.base.cli_console {
-                            console.print_error(&format!(
-                                "Failed to connect to MCP server '{}': {}",
-                                server_name, e
-                            ));
-                        }
-                        // Continue with other servers
-                    }
-                }
-            }
-
-            // Add MCP tools to the agent's tool collection
-            if !self.mcp_tools.is_empty() {
-                self.base.tools.extend(self.mcp_tools.clone());
-                // Rebuild tool executor with all tools
-                self.base.tool_executor = Arc::new(ToolExecutor::new(self.base.tools.clone()));
-
-                if let Some(console) = &self.base.cli_console {
-                    console.print_info(&format!(
-                        "Total MCP tools registered: {}",
-                        self.mcp_tools.len()
-                    ));
-                }
-            }
-        }
+        // MCP initialization disabled
+        // MCP initialization disabled
 
         Ok(())
     }
 
-    async fn cleanup_mcp_clients(&mut self) -> Result<()> {
-        for client in &self.mcp_clients {
-            let mut client = client.lock().await;
-            if let Err(e) = client.shutdown().await {
-                tracing::warn!("Error shutting down MCP client '{}': {}", client.name(), e);
-            }
-        }
 
-        self.mcp_clients.clear();
-        self.mcp_tools.clear();
-
-        Ok(())
-    }
-
-    fn parse_task_args(&mut self, task_args: &serde_json::Value) -> Result<()> {
-        if let Some(project_path) = task_args.get("project_path").and_then(|v| v.as_str()) {
-            self.project_path = project_path.to_string();
-        }
-
-        if let Some(base_commit) = task_args.get("base_commit").and_then(|v| v.as_str()) {
-            self.base_commit = Some(base_commit.to_string());
-        }
-
-        if let Some(must_patch) = task_args.get("must_patch").and_then(|v| v.as_str()) {
-            self.must_patch = must_patch.to_string();
-        }
-
-        if let Some(patch_path) = task_args.get("patch_path").and_then(|v| v.as_str()) {
-            self.patch_path = Some(patch_path.to_string());
-        }
-
-        Ok(())
-    }
 }
 
 
@@ -407,10 +298,7 @@ impl BaseAgent for AlanAgent {
         self.base.shutdown()?;
 
         // Cleanup MCP clients using tokio runtime
-        if !self.mcp_clients.is_empty() {
-            let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(self.cleanup_mcp_clients())?;
-        }
+        // MCP cleanup disabled
 
         Ok(())
     }
@@ -522,7 +410,6 @@ impl Clone for AlanAgent {
             patch_path: self.patch_path.clone(),
             mcp_servers_config: self.mcp_servers_config.clone(),
             allow_mcp_servers: self.allow_mcp_servers.clone(),
-            mcp_clients: self.mcp_clients.clone(),
             mcp_tools: self.mcp_tools.clone(),
         }
     }
