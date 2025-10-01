@@ -1,5 +1,7 @@
 module axi_crossbar (
+    input wire aclk,
     input wire aresetn,
+    input wire [7:0] m0_awid,
     input wire [31:0] m0_awaddr,
     input wire [7:0] m0_awlen,
     input wire [2:0] m0_awsize,
@@ -28,6 +30,7 @@ module axi_crossbar (
     output wire m0_rlast,
     output wire m0_rvalid,
     input wire m0_rready,
+    output wire [7:0] s0_awid,
     output wire [31:0] s0_awaddr,
     output wire [7:0] s0_awlen,
     output wire [2:0] s0_awsize,

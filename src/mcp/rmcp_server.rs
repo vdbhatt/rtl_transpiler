@@ -12,7 +12,7 @@ use serde::Deserialize;
 use schemars::JsonSchema;
 use std::sync::Arc;
 use std::future::Future;
-use crate::tools::{TranspileTool, TextEditorTool, VHDLAnalyzeTool};
+use crate::tools::{TranspileTool, TranspileFolderTool, TextEditorTool, VHDLAnalyzeTool};
 use crate::tools::base::Tool;
 
 /// Request parameters for VHDL to Verilog transpilation
@@ -22,6 +22,17 @@ struct TranspileRequest {
     vhdl_file: String,
     /// Optional output file path (if not provided, outputs to stdout)
     output_file: Option<String>,
+}
+
+/// Request parameters for batch VHDL folder transpilation
+#[derive(Deserialize, JsonSchema)]
+struct TranspileFolderRequest {
+    /// Path to the folder containing VHDL files
+    vhdl_folder: String,
+    /// Optional output folder path (if not provided, uses same folder)
+    output_folder: Option<String>,
+    /// Whether to recursively process subdirectories
+    recursive: Option<bool>,
 }
 
 /// Request parameters for VHDL analysis
@@ -53,16 +64,18 @@ struct EditRequest {
 }
 
 /// RTL Transpiler MCP Server
-/// 
+///
 /// This server exposes VHDL transpilation and analysis tools via the Model Context Protocol.
-/// It provides three main tools:
-/// - VHDL to Verilog transpilation
+/// It provides four main tools:
+/// - VHDL to Verilog transpilation (single file)
+/// - VHDL to Verilog batch transpilation (folder)
 /// - VHDL file analysis
 /// - Text file editing operations
 #[derive(Clone)]
 pub struct RTLTranspilerMCPServer {
     tool_router: rmcp::handler::server::router::tool::ToolRouter<Self>,
     transpile_tool: Arc<TranspileTool>,
+    transpile_folder_tool: Arc<TranspileFolderTool>,
     text_editor_tool: Arc<TextEditorTool>,
     vhdl_analyze_tool: Arc<VHDLAnalyzeTool>,
 }
@@ -73,22 +86,42 @@ impl RTLTranspilerMCPServer {
         Self {
             tool_router: Self::tool_router(),
             transpile_tool: Arc::new(TranspileTool::new(vec![])),
+            transpile_folder_tool: Arc::new(TranspileFolderTool::new(vec![])),
             text_editor_tool: Arc::new(TextEditorTool::new("mcp".to_string(), vec![])),
             vhdl_analyze_tool: Arc::new(VHDLAnalyzeTool::new(vec![])),
         }
     }
 
     /// Transpile VHDL entity to Verilog module
-    /// 
+    ///
     /// Extracts entity declaration from VHDL file and converts it to a Verilog module
     /// with matching ports, types, and generics. Uses AST-based parsing for robust analysis.
     #[tool(description = "Transpile VHDL entity to Verilog module. Extracts entity declaration and converts it to a Verilog module with matching ports.")]
     async fn transpile_vhdl_to_verilog(&self, params: rmcp::handler::server::tool::Parameters<TranspileRequest>) -> Result<CallToolResult, McpError> {
         let TranspileRequest { vhdl_file, output_file } = params.0;
-        
+
         match self.transpile_tool.execute(&serde_json::json!({
             "vhdl_file": vhdl_file,
             "output_file": output_file
+        })) {
+            Ok(result) => Ok(CallToolResult::success(vec![Content::text(result)])),
+            Err(e) => Ok(CallToolResult::success(vec![Content::text(format!("Error: {}", e))])),
+        }
+    }
+
+    /// Batch transpile all VHDL files in a folder to Verilog modules
+    ///
+    /// Processes all .vhd and .vhdl files in the specified directory. Optionally processes
+    /// subdirectories recursively. Each VHDL file is parsed and converted to a Verilog module
+    /// with matching ports, signals, processes, and architecture implementation.
+    #[tool(description = "Batch transpile all VHDL files in a folder to Verilog modules. Processes all .vhd and .vhdl files, converting entities and architectures.")]
+    async fn transpile_vhdl_folder(&self, params: rmcp::handler::server::tool::Parameters<TranspileFolderRequest>) -> Result<CallToolResult, McpError> {
+        let TranspileFolderRequest { vhdl_folder, output_folder, recursive } = params.0;
+
+        match self.transpile_folder_tool.execute(&serde_json::json!({
+            "vhdl_folder": vhdl_folder,
+            "output_folder": output_folder,
+            "recursive": recursive.unwrap_or(false)
         })) {
             Ok(result) => Ok(CallToolResult::success(vec![Content::text(result)])),
             Err(e) => Ok(CallToolResult::success(vec![Content::text(format!("Error: {}", e))])),
@@ -116,8 +149,8 @@ impl RTLTranspilerMCPServer {
     /// 
     /// Supports multiple file operations including view, create, search/replace,
     /// and insert operations. Provides a comprehensive file editing interface.
-    #[tool(description = "Edit text files with search/replace functionality. Supports view, create, str_replace, and insert operations.")]
-    async fn edit_file(&self, params: rmcp::handler::server::tool::Parameters<EditRequest>) -> Result<CallToolResult, McpError> {
+    #[tool(description = "Custom editing tool for viewing, creating and editing files\n* State is persistent across command calls\n* The create command cannot be used if the path already exists\n* For str_replace: old_str must match EXACTLY and be unique in the file")]
+    async fn str_replace_based_edit_tool(&self, params: rmcp::handler::server::tool::Parameters<EditRequest>) -> Result<CallToolResult, McpError> {
         let EditRequest { command, path, old_str, new_str, file_text, insert_line, view_range } = params.0;
         
         let mut args = serde_json::json!({

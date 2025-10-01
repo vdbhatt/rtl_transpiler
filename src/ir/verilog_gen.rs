@@ -158,11 +158,28 @@ impl VerilogGenerator {
 
             let mut verilog_line = trimmed.to_string();
 
-            // Convert bit literals first (before comparison operators)
+            // Skip lines with rising_edge/falling_edge as they're handled in sensitivity list
+            if verilog_line.starts_with("if") && (verilog_line.contains("rising_edge") || verilog_line.contains("falling_edge")) {
+                continue;
+            }
+
+            // Convert hex literals first (before other conversions)
+            // x"0" -> 4'h0, x"1" -> 4'h1, x"FF" -> 8'hFF
+            let hex_re = regex::Regex::new(r#"x"([0-9A-Fa-f]+)""#).unwrap();
+            verilog_line = hex_re.replace_all(&verilog_line, |caps: &regex::Captures| {
+                let hex_value = &caps[1];
+                let bit_width = hex_value.len() * 4; // Each hex digit is 4 bits
+                format!("{}'h{}", bit_width, hex_value)
+            }).to_string();
+
+            // Convert bit literals and comparison operators
+            // Handle '=' comparisons with bit literals (with or without spaces)
+            verilog_line = verilog_line.replace("='1'", " == 1'b1");
+            verilog_line = verilog_line.replace("='0'", " == 1'b0");
             verilog_line = verilog_line.replace(" = '1'", " == 1'b1");
             verilog_line = verilog_line.replace(" = '0'", " == 1'b0");
-            verilog_line = verilog_line.replace("= '1'", "== 1'b1");
-            verilog_line = verilog_line.replace("= '0'", "== 1'b0");
+
+            // Convert remaining bit literals
             verilog_line = verilog_line.replace("'1'", "1'b1");
             verilog_line = verilog_line.replace("'0'", "1'b0");
 
@@ -213,17 +230,32 @@ impl VerilogGenerator {
             }
 
             // Handle if/elsif/else/then keywords
-            let is_if = verilog_line.starts_with("if ");
-            let is_elsif = verilog_line.starts_with("elsif ");
+            let is_if = verilog_line.starts_with("if ") || verilog_line.starts_with("if(");
+            let is_elsif = verilog_line.starts_with("elsif ") || verilog_line.starts_with("elsif(");
             let is_else = verilog_line.trim() == "else";
             let is_endif = verilog_line == "end if" || verilog_line == "end if;";
 
             if is_if {
-                // "if reset == 1'b1 then" -> "if (reset == 1'b1) begin"
-                verilog_line = verilog_line.replacen("if ", "if (", 1);
-                verilog_line = verilog_line.replace(" then", ") begin");
-                if !verilog_line.contains(") begin") {
-                    verilog_line.push_str(" begin");
+                // "if(reset == 1'b1) then" -> "if (reset == 1'b1) begin"
+                // First, add space after 'if' if needed
+                if verilog_line.starts_with("if(") {
+                    verilog_line = verilog_line.replacen("if(", "if (", 1);
+                }
+                // Remove 'then' and add 'begin'
+                if verilog_line.contains(" then") {
+                    verilog_line = verilog_line.replace(" then", ") begin");
+                } else if verilog_line.contains(" begin") {
+                    // Already has begin, ensure proper parentheses
+                    if !verilog_line.contains(')') && verilog_line.contains('(') {
+                        verilog_line = verilog_line.replace(" begin", ") begin");
+                    }
+                } else {
+                    // No 'then' or 'begin', add them
+                    if verilog_line.contains('(') && !verilog_line.contains(')') {
+                        verilog_line.push_str(") begin");
+                    } else if !verilog_line.ends_with("begin") {
+                        verilog_line.push_str(" begin");
+                    }
                 }
             } else if is_elsif {
                 // "elsif rising_edge(clk) then" -> "end else begin"
@@ -249,12 +281,18 @@ impl VerilogGenerator {
             verilog_line = verilog_line.replace(" xor ", " ^ ");
             verilog_line = verilog_line.replace(" not ", " ~");
 
-            // Convert type conversions
+            // Convert type conversions - remove VHDL type casts
+            // Handle nested type conversions
             verilog_line = verilog_line.replace("std_logic_vector(unsigned(", "");
             verilog_line = verilog_line.replace("std_logic_vector(signed(", "");
+            verilog_line = verilog_line.replace("std_logic_vector(", "");
             verilog_line = verilog_line.replace("unsigned(", "");
             verilog_line = verilog_line.replace("signed(", "");
-            // Remove extra closing parens from type conversions (up to 2)
+            verilog_line = verilog_line.replace("to_unsigned(", "");
+            verilog_line = verilog_line.replace("to_signed(", "");
+            verilog_line = verilog_line.replace("to_integer(", "");
+
+            // Remove extra closing parens from type conversions
             let mut paren_diff = verilog_line.matches(')').count() as i32 - verilog_line.matches('(').count() as i32;
             while paren_diff > 0 {
                 if let Some(pos) = verilog_line.rfind(')') {
@@ -295,6 +333,22 @@ impl VerilogGenerator {
     fn convert_concurrent_statement(&self, stmt: &str) -> Result<String> {
         // Convert VHDL concurrent statements to Verilog assign statements
         let mut verilog = stmt.to_string();
+
+        // Remove type conversions
+        verilog = verilog.replace("std_logic_vector(", "");
+        verilog = verilog.replace("unsigned(", "");
+        verilog = verilog.replace("signed(", "");
+
+        // Remove extra closing parens from type conversions
+        let mut paren_diff = verilog.matches(')').count() as i32 - verilog.matches('(').count() as i32;
+        while paren_diff > 0 {
+            if let Some(pos) = verilog.rfind(')') {
+                verilog.remove(pos);
+                paren_diff -= 1;
+            } else {
+                break;
+            }
+        }
 
         // Handle with...select statements
         if verilog.contains("with ") && verilog.contains(" select") {

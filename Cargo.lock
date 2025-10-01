@@ -1178,6 +1178,7 @@ dependencies = [
  "crossterm",
  "lazy_static",
  "obfstr",
+ "regex",
  "reqwest",
  "rmcp",
  "schemars",

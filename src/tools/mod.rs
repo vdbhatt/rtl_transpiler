@@ -4,6 +4,7 @@ pub mod edit;
 pub mod sequential_thinking;
 pub mod task_done;
 pub mod transpile;
+pub mod transpile_folder;
 pub mod vhdl_analyze;
 
 use std::sync::Arc;
@@ -18,6 +19,7 @@ pub use edit::TextEditorTool;
 pub use sequential_thinking::SequentialThinkingTool;
 pub use task_done::TaskDoneTool;
 pub use transpile::TranspileTool;
+pub use transpile_folder::TranspileFolderTool;
 pub use vhdl_analyze::VHDLAnalyzeTool;
 
 pub fn create_tool(
@@ -44,6 +46,9 @@ pub fn create_tool(
         }
         "transpile_vhdl_to_verilog" => {
             Ok(Arc::new(TranspileTool::new(allowed_folders)))
+        }
+        "transpile_vhdl_folder" => {
+            Ok(Arc::new(TranspileFolderTool::new(allowed_folders)))
         }
         _ => Err(anyhow::anyhow!("Unknown tool: {}", tool_name)),
     }

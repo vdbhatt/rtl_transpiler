@@ -28,6 +28,6 @@ module simple_alu (
         endcase
     end
 
-    assign zero = result_temp == 8'b00000000 ? 1'b1 : 1'b0;
+    assign result = result_temp;
 endmodule
 

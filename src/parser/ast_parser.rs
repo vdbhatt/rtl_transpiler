@@ -311,20 +311,36 @@ impl ASTVHDLParser {
         let arch_name = VHDLASTHelper::node_text(&arch_name_node, &self.content).to_string();
 
         // Check if this architecture is for the correct entity
-        // Find the entity name reference in the architecture
-        let identifiers = VHDLASTHelper::find_children_by_type(arch_node, "identifier");
-        if identifiers.len() < 2 {
-            return Err(anyhow::anyhow!("Architecture missing entity reference"));
-        }
+        // Look for the entity name reference after "of" keyword
+        let all_identifiers = VHDLASTHelper::find_children_by_type(arch_node, "identifier");
         
-        let referenced_entity = VHDLASTHelper::node_text(&identifiers[1], &self.content);
+        // The entity name should be the second identifier (after architecture name)
+        let referenced_entity = if all_identifiers.len() >= 2 {
+            VHDLASTHelper::node_text(&all_identifiers[1], &self.content).to_string()
+        } else {
+            // Try to find entity name in a different way - look for it after "of"
+            let arch_text = VHDLASTHelper::node_text(arch_node, &self.content);
+            
+            // Simple text parsing: "architecture NAME of ENTITY is"
+            if let Some(of_pos) = arch_text.find(" of ") {
+                if let Some(is_pos) = arch_text.find(" is") {
+                    let entity_part = arch_text[of_pos + 4..is_pos].trim().to_string();
+                    entity_part
+                } else {
+                    return Err(anyhow::anyhow!("Architecture missing 'is' keyword"));
+                }
+            } else {
+                return Err(anyhow::anyhow!("Architecture missing 'of' keyword"));
+            }
+        };
+        
         if referenced_entity != entity_name {
             return Err(anyhow::anyhow!("Architecture is for different entity: {}", referenced_entity));
         }
 
         // Parse architecture declarative part (signals)
         let mut signals = Vec::new();
-        if let Some(decl_part) = VHDLASTHelper::find_child_by_type(arch_node, "architecture_declarative_part") {
+        if let Some(decl_part) = VHDLASTHelper::find_child_by_type(arch_node, "declarative_part") {
             signals = self.parse_signals_from_declarative_part(&decl_part)?;
         }
 
@@ -332,7 +348,7 @@ impl ASTVHDLParser {
         let mut processes = Vec::new();
         let mut concurrent_statements = Vec::new();
         
-        if let Some(stmt_part) = VHDLASTHelper::find_child_by_type(arch_node, "architecture_statement_part") {
+        if let Some(stmt_part) = VHDLASTHelper::find_child_by_type(arch_node, "concurrent_statement_part") {
             let (procs, concurrent) = self.parse_statements_from_statement_part(&stmt_part)?;
             processes = procs;
             concurrent_statements = concurrent;
@@ -398,11 +414,23 @@ impl ASTVHDLParser {
             }
         }
 
-        // Find other concurrent statements (simplified for now)
-        let concurrent_nodes = VHDLASTHelper::find_all_nodes_by_type(stmt_part, "concurrent_signal_assignment_statement");
-        for concurrent_node in concurrent_nodes {
-            let stmt_text = VHDLASTHelper::node_text(&concurrent_node, &self.content);
-            concurrent_statements.push(stmt_text.to_string());
+        // Find concurrent signal assignments - try different node types
+        let concurrent_types = vec![
+            "concurrent_signal_assignment_statement",
+            "simple_concurrent_signal_assignment",
+            "conditional_signal_assignment",
+            "selected_signal_assignment",
+        ];
+
+        for node_type in concurrent_types {
+            let concurrent_nodes = VHDLASTHelper::find_all_nodes_by_type(stmt_part, node_type);
+            for concurrent_node in concurrent_nodes {
+                let stmt_text = VHDLASTHelper::node_text(&concurrent_node, &self.content);
+                let stmt_str = stmt_text.trim().to_string();
+                if !stmt_str.is_empty() && !concurrent_statements.contains(&stmt_str) {
+                    concurrent_statements.push(stmt_str);
+                }
+            }
         }
 
         Ok((processes, concurrent_statements))
@@ -413,21 +441,31 @@ impl ASTVHDLParser {
         let label = VHDLASTHelper::find_child_by_type(process_node, "label")
             .map(|label_node| VHDLASTHelper::node_text(&label_node, &self.content).to_string());
 
-        // Get sensitivity list
+        // Get sensitivity list - check both in process_node itself and in sensitivity_list child
         let mut sensitivity_list = Vec::new();
-        if let Some(sensitivity_clause) = VHDLASTHelper::find_child_by_type(process_node, "sensitivity_clause") {
-            if let Some(sensitivity_list_node) = VHDLASTHelper::find_child_by_type(&sensitivity_clause, "sensitivity_list") {
-                let identifiers = VHDLASTHelper::find_children_by_type(&sensitivity_list_node, "identifier");
-                for identifier in identifiers {
-                    let name = VHDLASTHelper::node_text(&identifier, &self.content).to_string();
+
+        // First, try to find sensitivity_list directly as a child
+        if let Some(sensitivity_list_node) = VHDLASTHelper::find_child_by_type(process_node, "sensitivity_list") {
+            // Extract identifiers or simple_names from the sensitivity list
+            let simple_names = VHDLASTHelper::find_children_by_type(&sensitivity_list_node, "simple_name");
+            for name_node in simple_names {
+                let name = VHDLASTHelper::node_text(&name_node, &self.content).to_string();
+                sensitivity_list.push(name);
+            }
+
+            // Also try identifiers (in case they're not wrapped in simple_name)
+            let identifiers = VHDLASTHelper::find_children_by_type(&sensitivity_list_node, "identifier");
+            for identifier in identifiers {
+                let name = VHDLASTHelper::node_text(&identifier, &self.content).to_string();
+                if !sensitivity_list.contains(&name) {
                     sensitivity_list.push(name);
                 }
             }
         }
 
-        // Get process body (simplified - just store as text for now)
-        let body = if let Some(process_stmt_part) = VHDLASTHelper::find_child_by_type(process_node, "process_statement_part") {
-            VHDLASTHelper::node_text(&process_stmt_part, &self.content).to_string()
+        // Get process body - look for sequence_of_statements node
+        let body = if let Some(stmt_sequence) = VHDLASTHelper::find_child_by_type(process_node, "sequence_of_statements") {
+            VHDLASTHelper::node_text(&stmt_sequence, &self.content).to_string()
         } else {
             String::new()
         };

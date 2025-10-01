@@ -8,13 +8,15 @@ module counter_with_arch (
     reg [7:0] count_reg;
 
     always @(posedge clk or posedge reset) begin
-        if (reset == 1'b1) begin
+        if reset == 1'b1 begin
         count_reg <= 8'b0;
         end else begin
-        if (enable == 1'b1) begin
+        if enable == 1'b1 begin
         count_reg <= count_reg + 1;
         end
         end
     end
+
+    assign count = count_reg;
 endmodule
 
